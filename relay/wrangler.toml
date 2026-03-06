@@ -1,0 +1,11 @@
+name = "sermon-relay"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "SermonRelay"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SermonRelay"]
