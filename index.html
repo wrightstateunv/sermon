@@ -104,6 +104,11 @@
             50% { transform: scale(1.01) rotate(0.3deg); }
         }
         
+        @keyframes markerBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
         #tree-image {
             max-width: 100%;
             max-height: 95vh;
@@ -256,7 +261,7 @@
             background: rgba(15, 15, 30, 0.95);
             border: 2px solid var(--color-gold);
             border-radius: 12px;
-            padding: 40px;
+            padding: 20px;
             max-width: 90vw;
             max-height: 90vh;
             overflow-y: auto;
@@ -265,6 +270,15 @@
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        
+        #earth-panel {
+            max-width: 89vw;
+            max-height: 85vh;
+            width: 89vw;
+            height: 85vh;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
         
         .panel.active {
@@ -535,11 +549,16 @@
         }
         
         .remote-section-title {
-            font-size: 18px;
+            font-size: 20px;
+            font-weight: bold;
             color: var(--color-gold);
             margin-bottom: 15px;
             text-transform: uppercase;
             letter-spacing: 2px;
+            padding: 10px;
+            background: rgba(212, 175, 55, 0.1);
+            border-left: 4px solid var(--color-gold);
+            border-radius: 4px;
         }
         
         .nav-grid {
@@ -617,13 +636,80 @@
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
         }
         
-        #remoteDrawCanvas {
+        /* 
+         * TV MIRROR SCALING ARCHITECTURE
+         * --------------------------------
+         * .draw-container   → full-width panel, height set dynamically by JS to match aspect ratio
+         * #drawPreview       → clips the scaled iframe (overflow: hidden), sized to container
+         * #previewFrame      → set to TV_WIDTH x TV_HEIGHT px, then scale() shrinks it to fit
+         * #remoteDrawCanvas  → overlaid on top, same displayed size as the scaled iframe
+         */
+        .draw-container {
+            position: relative;
             width: 100%;
-            height: 300px;
-            background: rgba(0, 0, 0, 0.3);
+            /* height is set dynamically by JS based on aspect ratio */
             border: 2px solid var(--color-gold);
             border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        #drawPreview {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            background: #0a0a15;
+        }
+        
+        /* 
+         * The iframe is sized to the TV's actual pixel dimensions,
+         * then CSS transform shrinks it to fit the container.
+         * transform-origin: top left is critical — without it the scale
+         * centres the iframe and it bleeds outside the container.
+         */
+        #previewFrame {
+            display: block;
+            border: none;
+            opacity: 1;
+            pointer-events: none;
+            transform-origin: top left;
+            /* width, height, and transform are set dynamically by JS */
+        }
+        
+        #remoteDrawCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
             touch-action: none;
+            /* width and height are set dynamically by JS to match scaled iframe */
+        }
+        
+        .fullscreen-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 10, 21, 0.9);
+            border: 2px solid var(--color-gold);
+            color: var(--color-gold);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            z-index: 10000;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .fullscreen-btn:hover {
+            background: rgba(212, 175, 55, 0.2);
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+            transform: scale(1.05);
+        }
+        
+        body.remote-mode .fullscreen-btn {
+            display: none;
         }
         
         .connection-dot {
@@ -668,6 +754,9 @@
     
     <div id="particles-container"></div>
     
+    <!-- Fullscreen button (Display mode only) -->
+    <button class="fullscreen-btn" id="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    
     <!-- Annotation canvas for iPad drawing -->
     <canvas id="annotationCanvas" style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:9999;"></canvas>
     
@@ -679,16 +768,26 @@
         </div>
         
         <div class="remote-section">
+            <div class="remote-section-title">Display Controls</div>
+            <div class="nav-grid">
+                <button class="nav-btn nav-btn-full" id="local-fullscreen-btn" onclick="toggleLocalFullscreen()">⛶ Fullscreen iPad</button>
+            </div>
+            <div style="text-align: center; font-size: 12px; color: var(--color-gold); margin-top: 10px; opacity: 0.7;">
+                💻 Church Display: Press F key on laptop
+            </div>
+        </div>
+        
+        <div class="remote-section">
             <div class="remote-section-title">Navigate</div>
             <div class="nav-grid">
                 <button class="nav-btn" onclick="remoteNavigate('earth-panel')">🌍 Earth</button>
                 <button class="nav-btn" onclick="remoteNavigate('roots-panel')">🌱 Roots</button>
                 <button class="nav-btn" onclick="remoteNavigate('trunk-panel')">📜 Trunk</button>
-                <button class="nav-btn" onclick="remoteNavigate('ot-panel')">📖 OT</button>
-                <button class="nav-btn" onclick="remoteNavigate('nt-panel')">✝️ NT</button>
-                <button class="nav-btn" onclick="remoteNavigate('kids-panel')">🎉 Kids</button>
-                <button class="nav-btn" onclick="remoteNavigate('ruth-panel')">🌿 Ruth</button>
-                <button class="nav-btn" onclick="remoteNavigate('kings-panel')">✂️ Kings</button>
+                <button class="nav-btn" onclick="remoteNavigate('left-branch-panel')">📖 OT</button>
+                <button class="nav-btn" onclick="remoteNavigate('right-branch-panel')">✝️ NT</button>
+                <button class="nav-btn" onclick="remoteNavigate('heaven-panel')">🎉 Kids</button>
+                <button class="nav-btn" onclick="remoteNavigate('grafted-branch-panel')">🌿 Ruth</button>
+                <button class="nav-btn" onclick="remoteNavigate('dead-branch-panel')">✂️ Kings</button>
                 <button class="nav-btn" onclick="remoteNavigate('your-branch-panel')">⭐ Future</button>
                 <button class="nav-btn nav-btn-full" onclick="remoteNavigate('tree')">🌳 Return to Tree</button>
             </div>
@@ -702,13 +801,21 @@
                 <button class="tool-btn" onclick="remoteClear()">🗑️ Clear</button>
             </div>
             <div class="color-palette">
-                <button class="color-btn active" style="background:#FFD700" onclick="setColor('#FFD700')"></button>
-                <button class="color-btn" style="background:#FFFFFF" onclick="setColor('#FFFFFF')"></button>
-                <button class="color-btn" style="background:#FF4444" onclick="setColor('#FF4444')"></button>
-                <button class="color-btn" style="background:#44FFFF" onclick="setColor('#44FFFF')"></button>
-                <button class="color-btn" style="background:#44FF88" onclick="setColor('#44FF88')"></button>
+                <button class="color-btn active" style="background:#FFD700" onclick="setColor(event, '#FFD700')"></button>
+                <button class="color-btn" style="background:#FFFFFF" onclick="setColor(event, '#FFFFFF')"></button>
+                <button class="color-btn" style="background:#FF4444" onclick="setColor(event, '#FF4444')"></button>
+                <button class="color-btn" style="background:#44FFFF" onclick="setColor(event, '#44FFFF')"></button>
+                <button class="color-btn" style="background:#44FF88" onclick="setColor(event, '#44FF88')"></button>
             </div>
-            <canvas id="remoteDrawCanvas"></canvas>
+            <div style="text-align: center; font-size: 14px; color: var(--color-gold); margin: 15px 0; font-weight: bold; opacity: 0.9;">
+                📺 TV SCREEN MIRROR
+            </div>
+            <div class="draw-container">
+                <div id="drawPreview">
+                    <iframe id="previewFrame" src="" style="width: 100%; height: 100%; border: none; opacity: 0.6;"></iframe>
+                </div>
+                <canvas id="remoteDrawCanvas"></canvas>
+            </div>
         </div>
     </div>
     
@@ -818,27 +925,27 @@
     
     <div id="heaven-panel" class="panel panel-slide-up" style="max-width: 600px;">
         <button class="panel-close-btn" onclick="closeAllPanels()">← Back to Tree</button>
-        <h2>Kids Math Moment 🎉</h2>
+        <h2 style="font-size: 20px; margin-bottom: 10px;">Kids Math Moment 🎉</h2>
         <div class="panel-content" style="text-align: center;">
-            <div style="font-size: 24px; margin: 30px 0; line-height: 2;">
-                <p><strong>Step 1:</strong> OLD = 3 letters, TESTAMENT = 9 letters → <span style="color: var(--color-gold-bright); font-size: 32px;">39 Books!</span></p>
-                <p><strong>Step 2:</strong> 3 × 9 = <span style="color: var(--color-gold-bright); font-size: 32px;">27 Books!</span></p>
-                <p><strong>Step 3:</strong> 39 + 27 = <span style="color: var(--color-gold-bright); font-size: 36px;">66 Books! (Like Route 66!) 🛣️</span></p>
+            <div style="font-size: 16px; margin: 15px 0; line-height: 1.6;">
+                <p><strong>Step 1:</strong> OLD = 3 letters, TESTAMENT = 9 letters → <span style="color: var(--color-gold-bright); font-size: 20px;">39 Books!</span></p>
+                <p><strong>Step 2:</strong> 3 × 9 = <span style="color: var(--color-gold-bright); font-size: 20px;">27 Books!</span></p>
+                <p><strong>Step 3:</strong> 39 + 27 = <span style="color: var(--color-gold-bright); font-size: 22px;">66 Books! (Like Route 66!) 🛣️</span></p>
             </div>
-            <div style="margin: 40px 0; padding: 30px; background: rgba(212, 175, 55, 0.1); border-radius: 10px;">
-                <h3 style="margin-bottom: 20px;">Staggering Stats</h3>
-                <p style="font-size: 22px; margin: 15px 0;">~<span class="count-up" data-target="40">0</span> Authors</p>
-                <p style="font-size: 22px; margin: 15px 0;">~<span class="count-up" data-target="1500">0</span> Years to write</p>
-                <p style="font-size: 22px; margin: 15px 0;"><span class="count-up" data-target="3">0</span> Languages (Hebrew, Aramaic, Greek)</p>
-                <p style="font-size: 22px; margin: 15px 0;"><span class="count-up" data-target="3">0</span> Continents (Africa, Asia, Europe)</p>
+            <div style="margin: 20px 0; padding: 15px; background: rgba(212, 175, 55, 0.1); border-radius: 10px;">
+                <h3 style="margin-bottom: 10px; font-size: 18px;">Staggering Stats</h3>
+                <p style="font-size: 15px; margin: 8px 0;">~<span class="count-up" data-target="40">0</span> Authors</p>
+                <p style="font-size: 15px; margin: 8px 0;">~<span class="count-up" data-target="1500">0</span> Years to write</p>
+                <p style="font-size: 15px; margin: 8px 0;"><span class="count-up" data-target="3">0</span> Languages (Hebrew, Aramaic, Greek)</p>
+                <p style="font-size: 15px; margin: 8px 0;"><span class="count-up" data-target="3">0</span> Continents (Africa, Asia, Europe)</p>
             </div>
-            <div style="font-size: 24px; margin: 30px 0; padding: 20px; background: rgba(212, 175, 55, 0.15); border-radius: 10px;">
+            <div style="font-size: 16px; margin: 20px 0; padding: 15px; background: rgba(212, 175, 55, 0.15); border-radius: 10px;">
                 <p style="font-style: italic;">"If 40 strangers who never met wrote a chapter each over 1,500 years... would it all agree?"</p>
             </div>
-            <p style="font-size: 28px; margin: 30px 0; color: var(--color-gold-bright);">
+            <p style="font-size: 18px; margin: 15px 0; color: var(--color-gold-bright);">
                 <strong>Only God could do that.</strong>
             </p>
-            <p class="scripture">
+            <p class="scripture" style="font-size: 14px; margin-top: 10px;">
                 2 Timothy 3:16
             </p>
         </div>
@@ -991,24 +1098,179 @@
     <div id="earth-panel" class="panel panel-expand-center">
         <button class="panel-close-btn" onclick="closeAllPanels()">← Back to Tree</button>
         <h2>Biblical Geography & Locations</h2>
-        <div class="panel-content">
-            <div id="map-container" style="margin: 30px 0; min-height: 400px;"></div>
-            <div style="display: flex; justify-content: space-around; margin: 30px 0; padding: 20px; background: rgba(212, 175, 55, 0.1); border-radius: 10px;">
+        <div class="panel-content" style="display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 20px 0 40px 0;">
+            <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
+                <svg id="map-container" viewBox="0 0 1000 428.5" width="1562.5" height="669.53" style="border-radius: 10px; border: 2px solid var(--color-gold-dim); background-color: #1a2639; transform-origin: center; transform: scale(var(--map-scale, 1.0));">
+                    <!-- World Map Background -->
+                    <image href="world.svg" width="1000" height="428.5" opacity="0.8"/>
+                    
+                    <!-- Markers (circles with glow effect) -->
+                    <defs>
+                        <filter id="glow">
+                            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                            <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    
+                    <!-- USA -->
+                    <circle cx="241" cy="134" r="5" fill="#00ff00" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>USA</title>
+                    </circle>
+                    <text x="257" y="138" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">USA</text>
+                    
+                    <!-- Israel / Canaan -->
+                    <circle cx="593" cy="130" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Israel / Canaan</title>
+                    </circle>
+                    <text x="608" y="133" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Israel / Canaan</text>
+                    
+                    <!-- Egypt -->
+                    <circle cx="573" cy="140" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Egypt</title>
+                    </circle>
+                    <text x="537" y="154" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Egypt</text>
+                    
+                    <!-- Sinai -->
+                    <circle cx="585" cy="143" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Sinai</title>
+                    </circle>
+                    <text x="593" y="149" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Sinai</text>
+                    
+                    <!-- Moab (Jordan) -->
+                    <circle cx="606" cy="133" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Moab (Jordan)</title>
+                    </circle>
+                    <text x="614" y="139" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Moab (Jordan)</text>
+                    
+                    <!-- Babylon (Iraq) -->
+                    <circle cx="624" cy="128" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Babylon (Iraq)</title>
+                    </circle>
+                    <text x="634" y="133" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Babylon (Iraq)</text>
+                    
+                    <!-- Persia (Iran) -->
+                    <circle cx="649" cy="128" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Persia (Iran)</title>
+                    </circle>
+                    <text x="659" y="133" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Persia (Iran)</text>
+                    
+                    <!-- Asia Minor (Turkey) -->
+                    <circle cx="578" cy="111" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Asia Minor (Turkey)</title>
+                    </circle>
+                    <text x="588" y="116" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Asia Minor (Turkey)</text>
+                    
+                    <!-- Greece -->
+                    <circle cx="549" cy="114" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Greece</title>
+                    </circle>
+                    <text x="512" y="129" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Greece</text>
+                    
+                    <!-- Patmos -->
+                    <circle cx="557" cy="117" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Patmos</title>
+                    </circle>
+                    <text x="548" y="132" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Patmos</text>
+                    
+                    <!-- Rome (Italy) -->
+                    <circle cx="519" cy="103" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Rome (Italy)</title>
+                    </circle>
+                    <text x="484" y="103" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Rome (Italy)</text>
+                    
+                    <!-- India -->
+                    <circle cx="722" cy="185" r="5" fill="#ff8800" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>India</title>
+                    </circle>
+                    <text x="732" y="189" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">India</text>
+                    
+                    <!-- Syria / Damascus -->
+                    <circle cx="596" cy="125" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Syria / Damascus</title>
+                    </circle>
+                    <text x="606" y="129" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Syria / Damascus</text>
+                    
+                    <!-- Lebanon / Tyre -->
+                    <circle cx="593" cy="124" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Lebanon / Tyre</title>
+                    </circle>
+                    <text x="583" y="128" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Lebanon / Tyre</text>
+                    
+                    <!-- Ethiopia / Sudan -->
+                    <circle cx="607" cy="184" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Ethiopia / Sudan</title>
+                    </circle>
+                    <text x="617" y="188" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Ethiopia / Sudan</text>
+                    
+                    <!-- Cyprus -->
+                    <circle cx="586" cy="121" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Cyprus</title>
+                    </circle>
+                    <text x="596" y="125" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Cyprus</text>
+                    
+                    <!-- Saudi Arabia -->
+                    <circle cx="622" cy="150" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Saudi Arabia</title>
+                    </circle>
+                    <text x="632" y="154" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Saudi Arabia</text>
+                    
+                    <!-- Malta -->
+                    <circle cx="538" cy="119" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Malta</title>
+                    </circle>
+                    <text x="548" y="123" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Malta</text>
+                    
+                    <!-- Yemen / Sheba -->
+                    <circle cx="631" cy="173" r="5" fill="#0066ff" stroke="#fff" stroke-width="1.5" filter="url(#glow)" style="cursor: pointer; animation: markerBlink 2s ease-in-out infinite;">
+                        <title>Yemen / Sheba</title>
+                    </circle>
+                    <text x="641" y="177" fill="#fff" font-size="10" font-weight="600" text-anchor="start" style="text-shadow: 1px 1px 3px rgba(0,0,0,0.8); pointer-events: none;">Yemen / Sheba</text>
+                    
+                    <!-- Legend -->
+                    <g transform="translate(20, 385)">
+                        <rect width="200" height="35" fill="rgba(10, 15, 25, 0.9)" rx="5" stroke="var(--color-gold-dim)" stroke-width="1"/>
+                        <text x="10" y="15" fill="var(--color-gold)" font-size="10" font-weight="bold">Map Legend</text>
+                        <circle cx="10" cy="27" r="4" fill="#0066ff" stroke="#fff" stroke-width="1"/>
+                        <text x="20" y="30" fill="var(--color-text-light)" font-size="8">Biblical Locations</text>
+                    </g>
+                    
+                    <!-- Compass -->
+                    <g transform="translate(950, 385)">
+                        <circle cx="25" cy="25" r="20" fill="rgba(10, 15, 25, 0.85)" stroke="var(--color-gold)" stroke-width="2"/>
+                        <text x="25" y="30" fill="var(--color-gold)" font-size="16" font-weight="bold" text-anchor="middle">N</text>
+                        <text x="25" y="15" fill="var(--color-gold)" font-size="10" text-anchor="middle">↑</text>
+                    </g>
+                </svg>
+                
+                <style>
+                    @keyframes pulse {
+                        0%, 100% { transform: scale(1); opacity: 1; }
+                        50% { transform: scale(1.15); opacity: 0.8; }
+                    }
+                </style>
+            </div>
+            </div>
+            
+            <!-- Statistics Section Below Map -->
+            <div style="display: flex; gap: 30px; justify-content: center; max-width: 700px; padding: 15px 25px; background: rgba(212, 175, 55, 0.08); border-radius: 8px; border: 1px solid rgba(212, 175, 55, 0.3);">
                 <div style="text-align: center;">
-                    <p style="font-size: 32px; color: var(--color-gold-bright); font-weight: bold;">3</p>
-                    <p style="font-size: 16px;">Continents</p>
+                    <p style="font-size: 28px; color: var(--color-gold-bright); font-weight: bold; margin: 0;">3</p>
+                    <p style="font-size: 12px; margin: 3px 0 0 0; opacity: 0.8;">Continents</p>
                 </div>
                 <div style="text-align: center;">
-                    <p style="font-size: 32px; color: var(--color-gold-bright); font-weight: bold;">10+</p>
-                    <p style="font-size: 16px;">Countries (modern borders)</p>
+                    <p style="font-size: 28px; color: var(--color-gold-bright); font-weight: bold; margin: 0;">10+</p>
+                    <p style="font-size: 12px; margin: 3px 0 0 0; opacity: 0.8;">Countries</p>
                 </div>
                 <div style="text-align: center;">
-                    <p style="font-size: 32px; color: var(--color-gold-bright); font-weight: bold;">1,500</p>
-                    <p style="font-size: 16px;">Years</p>
+                    <p style="font-size: 28px; color: var(--color-gold-bright); font-weight: bold; margin: 0;">1,500</p>
+                    <p style="font-size: 12px; margin: 3px 0 0 0; opacity: 0.8;">Years</p>
                 </div>
                 <div style="text-align: center;">
-                    <p style="font-size: 32px; color: var(--color-gold-bright); font-weight: bold;">1</p>
-                    <p style="font-size: 16px;">Consistent Story</p>
+                    <p style="font-size: 28px; color: var(--color-gold-bright); font-weight: bold; margin: 0;">1</p>
+                    <p style="font-size: 12px; margin: 3px 0 0 0; opacity: 0.8;">Story</p>
                 </div>
             </div>
         </div>
@@ -1016,8 +1278,7 @@
     
     <script>
         // === CLOUDFLARE REMOTE CONTROL CONFIGURATION ===
-        // IMPORTANT: Replace YOURNAME with your actual Cloudflare account name after deploying the worker
-        const RELAY_URL = "wss://sermon-relay.YOURNAME.workers.dev/relay";
+        const RELAY_URL = "wss://sermon-relay.mathew99.workers.dev/relay";
         const SESSION_TOKEN = "grace-church-2026-x7k2m"; // Security token
         const IS_REMOTE = new URLSearchParams(window.location.search).has("remote");
         
@@ -1334,83 +1595,24 @@
         }
         
         function initMapLocations() {
-            const locations = [
-                { name: 'Mesopotamia / Iraq', x: 60, y: 35, info: 'Garden of Eden, Tower of Babel, Abraham\'s hometown (Ur), Daniel\'s exile, Ezekiel wrote here' },
-                { name: 'Egypt', x: 45, y: 55, info: 'Joseph sold into slavery, Moses and the Exodus, the Plagues, Jeremiah fled here' },
-                { name: 'Sinai Peninsula', x: 48, y: 50, info: '40 years wilderness wandering, Ten Commandments given, Moses wrote here' },
-                { name: 'Israel / Canaan', x: 50, y: 45, info: 'Conquest, Judges, all the Kings, Jesus\' ministry, David wrote Psalms here' },
-                { name: 'Jerusalem', x: 51, y: 46, info: 'David\'s throne, Solomon\'s temple, Jesus\' crucifixion and resurrection' },
-                { name: 'Galilee', x: 50, y: 43, info: 'Most of Jesus\' miracles and ministry' },
-                { name: 'Babylon / Iraq', x: 60, y: 38, info: '70-year exile of Israel, Daniel and Ezekiel wrote here' },
-                { name: 'Persia / Iran', x: 70, y: 40, info: 'Esther\'s story, Daniel\'s later life' },
-                { name: 'Rome / Italy', x: 30, y: 30, info: 'Paul\'s imprisonment, Luke and Peter wrote here' },
-                { name: 'Isle of Patmos / Greece', x: 40, y: 35, info: 'John wrote Revelation in exile here' }
-            ];
-            
-            const container = document.getElementById('map-container');
-            container.style.position = 'relative';
-            container.style.background = 'linear-gradient(135deg, rgba(74, 124, 74, 0.1) 0%, rgba(212, 175, 55, 0.05) 100%)';
-            container.style.borderRadius = '10px';
-            container.style.border = '2px solid var(--color-gold-dim)';
-            
-            locations.forEach(loc => {
-                const marker = document.createElement('div');
-                marker.style.cssText = `
-                    position: absolute;
-                    left: ${loc.x}%;
-                    top: ${loc.y}%;
-                    width: 20px;
-                    height: 20px;
-                    background: var(--color-gold-bright);
-                    border: 2px solid var(--color-gold);
-                    border-radius: 50%;
-                    cursor: pointer;
-                    box-shadow: 0 0 15px var(--color-gold);
-                    transform: translate(-50%, -50%);
-                    transition: all 0.3s ease;
-                    z-index: 1;
-                `;
-                
-                marker.addEventListener('mouseenter', () => {
-                    marker.style.transform = 'translate(-50%, -50%) scale(1.3)';
-                    marker.style.boxShadow = '0 0 25px var(--color-gold-bright)';
-                });
-                
-                marker.addEventListener('mouseleave', () => {
-                    marker.style.transform = 'translate(-50%, -50%) scale(1)';
-                    marker.style.boxShadow = '0 0 15px var(--color-gold)';
-                });
-                
-                marker.addEventListener('click', () => {
-                    const existing = container.querySelector('.location-popup');
-                    if (existing) existing.remove();
+            // Calculate and log map scaling factors for coordinate conversion
+            const worldMap = document.getElementById('worldMap');
+            if (worldMap) {
+                worldMap.onload = function() {
+                    const mapContainer = document.getElementById('map-container');
+                    const containerWidth = mapContainer.clientWidth;
+                    const containerHeight = mapContainer.clientHeight;
+                    const naturalWidth = this.naturalWidth;
+                    const naturalHeight = this.naturalHeight;
                     
-                    const popup = document.createElement('div');
-                    popup.className = 'location-popup';
-                    popup.style.cssText = `
-                        position: absolute;
-                        left: ${loc.x}%;
-                        top: ${loc.y}%;
-                        transform: translate(-50%, calc(-100% - 30px));
-                        background: rgba(10, 10, 21, 0.98);
-                        border: 2px solid var(--color-gold);
-                        border-radius: 8px;
-                        padding: 15px;
-                        max-width: 300px;
-                        z-index: 10;
-                        box-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
-                    `;
-                    popup.innerHTML = `
-                        <h4 style="color: var(--color-gold-bright); margin: 0 0 10px 0; font-size: 18px;">${loc.name}</h4>
-                        <p style="margin: 0; font-size: 14px; line-height: 1.6;">${loc.info}</p>
-                        <button onclick="this.parentElement.remove()" style="margin-top: 10px; padding: 5px 15px; background: var(--color-gold); color: var(--color-bg-deep); border: none; border-radius: 4px; cursor: pointer; font-family: 'Cinzel', serif;">Close</button>
-                    `;
-                    
-                    container.appendChild(popup);
-                });
-                
-                container.appendChild(marker);
-            });
+                    // Log scaling information to console for coordinate calculations
+                    console.log('Map Scaling Information:');
+                    console.log('Container dimensions:', containerWidth, 'x', containerHeight);
+                    console.log('Image natural dimensions:', naturalWidth, 'x', naturalHeight);
+                    console.log('Scale factors - X:', containerWidth / naturalWidth, 'Y:', containerHeight / naturalHeight);
+                    console.log('For coordinate conversion: multiply raw x,y by these scale factors');
+                };
+            }
         }
         
         function initCountUpAnimations() {
@@ -1554,6 +1756,9 @@
             if (e.key === 'Escape') {
                 closeAllPanels();
             }
+            if (e.key === 'f' || e.key === 'F') {
+                toggleFullscreen();
+            }
         });
         
         // === WEBSOCKET RELAY & ANNOTATION SYSTEM ===
@@ -1568,10 +1773,32 @@
             const statusDot = document.getElementById('connection-dot');
             
             function resizeAnnotationCanvas() {
+                // Preserve existing drawings before resize
+                const imageData = canvas.width > 0 ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+                const oldWidth = canvas.width;
+                const oldHeight = canvas.height;
+                
+                // Set canvas resolution to match actual screen pixels
                 canvas.width = window.innerWidth;
                 canvas.height = window.innerHeight;
+                
+                // Restore drawings if canvas size didn't change significantly
+                if (imageData && Math.abs(oldWidth - canvas.width) < 50 && Math.abs(oldHeight - canvas.height) < 50) {
+                    ctx.putImageData(imageData, 0, 0);
+                }
+                
+                console.log(`Display canvas: ${canvas.width}x${canvas.height}`);
             }
+            
+            // Resize on window resize
             window.addEventListener('resize', resizeAnnotationCanvas);
+            
+            // Resize on fullscreen change
+            document.addEventListener('fullscreenchange', () => {
+                // Delay to ensure fullscreen dimensions are available
+                setTimeout(resizeAnnotationCanvas, 100);
+            });
+            
             resizeAnnotationCanvas();
             
             function connectDisplayRelay() {
@@ -1581,6 +1808,8 @@
                     ws.onopen = () => {
                         statusDot.classList.add('connected');
                         console.log('✅ Connected to relay');
+                        // Send current state to newly connected remotes
+                        broadcastCurrentState();
                     };
                     
                     ws.onmessage = (event) => {
@@ -1597,6 +1826,8 @@
                                 } else {
                                     openPanel(data.panel);
                                 }
+                                // Broadcast state change
+                                setTimeout(broadcastCurrentState, 100);
                             }
                             
                             // Annotation stroke
@@ -1608,6 +1839,9 @@
                             if (data.type === 'clear') {
                                 clearAnnotations();
                             }
+                            
+                            // Fullscreen toggle removed - browser security prevents remote fullscreen
+                            // Church user should press F key on laptop to enter fullscreen
                         } catch (e) {
                             console.error('Message parse error:', e);
                         }
@@ -1630,23 +1864,50 @@
                 ctx.lineWidth = stroke.width || 4;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
-                
+
+                // Coordinate mapping:
+                // The remote canvas is sized to exactly match the scaled iframe mirror,
+                // so a point recorded as (pixelX / canvasWidth) maps directly to
+                // (ratio * tvCanvasWidth) on the TV — no aspect or offset correction needed.
+                const tvW = canvas.width;
+                const tvH = canvas.height;
+
                 if (stroke.type === 'path' && stroke.points && stroke.points.length > 1) {
                     ctx.beginPath();
                     stroke.points.forEach((pt, i) => {
-                        const x = (parseFloat(pt.x) / 100) * canvas.width;
-                        const y = (parseFloat(pt.y) / 100) * canvas.height;
-                        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                        const ptPixelX   = pt.pixelX     ? parseFloat(pt.pixelX)     : null;
+                        const ptPixelY   = pt.pixelY     ? parseFloat(pt.pixelY)     : null;
+                        const ptCanvasW  = pt.canvasWidth  || 0;
+                        const ptCanvasH  = pt.canvasHeight || 0;
+
+                        // Prefer pixel-ratio mapping; fall back to percentage
+                        const x = (ptPixelX !== null && ptCanvasW > 0)
+                            ? (ptPixelX / ptCanvasW) * tvW
+                            : (parseFloat(pt.x) / 100) * tvW;
+
+                        const y = (ptPixelY !== null && ptCanvasH > 0)
+                            ? (ptPixelY / ptCanvasH) * tvH
+                            : (parseFloat(pt.y) / 100) * tvH;
+
+                        if (i === 0) {
+                            ctx.moveTo(x, y);
+                            console.log(`🟢 CHURCH: ${pt.x}%,${pt.y}% → ${x.toFixed(0)},${y.toFixed(0)}px`);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
                     });
                     ctx.stroke();
                 }
-                
+
                 if (stroke.type === 'text') {
-                    ctx.fillStyle = stroke.color || '#FFD700';
-                    ctx.font = `bold ${stroke.fontSize || 32}px 'Cinzel', serif`;
-                    ctx.textAlign = 'center';
-                    const x = (parseFloat(stroke.x) / 100) * canvas.width;
-                    const y = (parseFloat(stroke.y) / 100) * canvas.height;
+                    ctx.fillStyle  = stroke.color || '#FFD700';
+                    ctx.font       = `bold ${stroke.fontSize || 32}px 'Cinzel', serif`;
+                    ctx.textAlign  = 'center';
+
+                    const x = (parseFloat(stroke.x) / 100) * tvW;
+                    const y = (parseFloat(stroke.y) / 100) * tvH;
+
+                    console.log(`🟢 CHURCH TEXT: → ${x.toFixed(0)},${y.toFixed(0)}px`);
                     ctx.fillText(stroke.text, x, y);
                 }
             }
@@ -1655,8 +1916,76 @@
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
             
+            function broadcastCurrentState() {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    // Get precise viewport and canvas dimensions
+                    const viewportWidth = window.innerWidth;
+                    const viewportHeight = window.innerHeight;
+                    const canvasRect = canvas.getBoundingClientRect();
+                    
+                    const state = {
+                        type: 'state',
+                        token: SESSION_TOKEN,
+                        panel: appState.activePanel || 'tree',
+                        panelTitle: appState.activePanel ? document.getElementById(appState.activePanel)?.querySelector('h2')?.textContent || 'Content Panel' : 'Tree of Life',
+                        // Include comprehensive TV dimensions for remote app synchronization
+                        tvDimensions: {
+                            // Canvas dimensions in pixels
+                            canvasWidth: canvas.width,
+                            canvasHeight: canvas.height,
+                            // Displayed dimensions on screen
+                            displayedWidth: canvasRect.width,
+                            displayedHeight: canvasRect.height,
+                            // Viewport dimensions
+                            viewportWidth: viewportWidth,
+                            viewportHeight: viewportHeight,
+                            // Position within viewport
+                            top: canvasRect.top,
+                            left: canvasRect.left,
+                            // Aspect ratios
+                            canvasAspect: canvas.width / canvas.height,
+                            displayedAspect: canvasRect.width / canvasRect.height,
+                            viewportAspect: viewportWidth / viewportHeight,
+                            // Padding/margins
+                            paddingHorizontal: (viewportWidth - canvasRect.width) / 2,
+                            paddingVertical: (viewportHeight - canvasRect.height) / 2
+                        }
+                    };
+                    ws.send(JSON.stringify(state));
+                    console.log(`Broadcasting TV dimensions: ${canvas.width}x${canvas.height}, displayed: ${canvasRect.width.toFixed(0)}x${canvasRect.height.toFixed(0)}`);
+                }
+            }
+            
             connectDisplayRelay();
         }
+        
+        // === FULLSCREEN FUNCTIONALITY ===
+        
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                // Enter fullscreen
+                document.documentElement.requestFullscreen().then(() => {
+                    document.getElementById('fullscreen-btn').textContent = '⛶ Exit Fullscreen';
+                }).catch(err => {
+                    console.error('Error entering fullscreen:', err);
+                });
+            } else {
+                // Exit fullscreen
+                document.exitFullscreen().then(() => {
+                    document.getElementById('fullscreen-btn').textContent = '⛶ Fullscreen';
+                }).catch(err => {
+                    console.error('Error exiting fullscreen:', err);
+                });
+            }
+        }
+        
+        // Update button text when fullscreen changes (e.g., via ESC key)
+        document.addEventListener('fullscreenchange', () => {
+            const btn = document.getElementById('fullscreen-btn');
+            if (btn) {
+                btn.textContent = document.fullscreenElement ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+            }
+        });
         
         // Remote Mode: Send commands to laptop
         if (IS_REMOTE) {
@@ -1669,9 +1998,11 @@
             let activeColor = '#FFD700';
             let isDrawing = false;
             
-            // Setup canvas
-            drawCanvas.width = drawCanvas.clientWidth;
-            drawCanvas.height = drawCanvas.clientHeight;
+            // Canvas resizing is handled by updatePreviewScale() whenever the
+            // container dimensions change (window resize, orientation change).
+            window.addEventListener('orientationchange', () => {
+                setTimeout(updatePreviewScale, 150);
+            });
             
             function connectRemoteRelay() {
                 if (!RELAY_URL.includes('YOURNAME')) {
@@ -1680,6 +2011,36 @@
                     ws.onopen = () => {
                         updateStatus('connected');
                         console.log('✅ iPad connected to relay');
+                        // Request current state
+                        sendToRelay({ type: 'request_state' });
+                    };
+                    
+                    ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.type === 'state' && data.token === SESSION_TOKEN) {
+                                console.log('Received state update:', data.panel);
+
+                                // Update stored TV dimensions if the display sent them
+                                if (data.tvDimensions) {
+                                    const d = data.tvDimensions;
+                                    // Prefer viewportWidth (the actual browser window size on the TV)
+                                    if (d.viewportWidth && d.viewportHeight) {
+                                        previewState.tvWidth  = d.viewportWidth;
+                                        previewState.tvHeight = d.viewportHeight;
+                                    } else if (d.canvasWidth && d.canvasHeight) {
+                                        previewState.tvWidth  = d.canvasWidth;
+                                        previewState.tvHeight = d.canvasHeight;
+                                    }
+                                    // Recalculate scale with real TV dimensions
+                                    updatePreviewScale();
+                                }
+
+                                previewState.currentPanel = data.panel;
+                            }
+                        } catch (e) {
+                            console.error('Message parse error:', e);
+                        }
                     };
                     
                     ws.onclose = () => {
@@ -1712,6 +2073,91 @@
                 }
             }
             
+            // updatePreview is called when WebSocket state arrives (handled above)
+            
+            // ── TV MIRROR: iframe + CSS scale approach ──────────────────────────────
+            //
+            // The iframe loads the main app at its *natural* size (TV_WIDTH × TV_HEIGHT).
+            // CSS transform: scale(factor) then shrinks it to fit the preview container.
+            // The container's height is set to (TV_HEIGHT × factor) so nothing bleeds out.
+            //
+            // This means the iframe always "thinks" it is running at full TV resolution,
+            // so panels, fonts, and layout match the TV exactly — just zoomed down.
+            // ────────────────────────────────────────────────────────────────────────────
+
+            const TV_ASPECT = 16 / 9;   // change if your TV is different
+
+            let previewState = {
+                currentPanel: null,
+                tvWidth: 1920,
+                tvHeight: 1080,
+                scale: 1
+            };
+
+            function updatePreviewScale() {
+                const frame       = document.getElementById('previewFrame');
+                const preview     = document.getElementById('drawPreview');
+                const container   = document.querySelector('.draw-container');
+                const drawCanvas  = document.getElementById('remoteDrawCanvas');
+                if (!frame || !preview || !container) return;
+
+                // Available width is the container's full CSS width
+                const availableWidth = container.clientWidth;
+
+                // Scale factor: shrink TV_WIDTH down to availableWidth
+                const scale = availableWidth / previewState.tvWidth;
+                previewState.scale = scale;
+
+                const scaledHeight = previewState.tvHeight * scale;
+
+                // 1. Set container height to match the scaled preview (maintains aspect)
+                container.style.height = scaledHeight + 'px';
+
+                // 2. Size the iframe to the real TV dimensions, then scale it down
+                frame.style.width     = previewState.tvWidth  + 'px';
+                frame.style.height    = previewState.tvHeight + 'px';
+                frame.style.transform = `scale(${scale})`;
+
+                // 3. drawPreview clips the iframe — must match scaled output size
+                preview.style.width  = availableWidth + 'px';
+                preview.style.height = scaledHeight   + 'px';
+
+                // 4. Annotation canvas overlays the scaled preview exactly
+                drawCanvas.style.width  = availableWidth + 'px';
+                drawCanvas.style.height = scaledHeight   + 'px';
+                drawCanvas.style.position = 'absolute';
+                drawCanvas.style.top      = '0';
+                drawCanvas.style.left     = '0';
+
+                // Resize canvas pixel buffer to match display size
+                drawCanvas.width  = availableWidth;
+                drawCanvas.height = scaledHeight;
+
+                console.log(`Preview: TV ${previewState.tvWidth}×${previewState.tvHeight} → scale ${scale.toFixed(3)} → ${availableWidth.toFixed(0)}×${scaledHeight.toFixed(0)}px`);
+            }
+
+            // Initialize preview iframe — loads main app (no ?remote) at full TV resolution
+            function initPreviewFrame() {
+                const frame = document.getElementById('previewFrame');
+                if (!frame) return;
+
+                const displayUrl = window.location.origin + window.location.pathname;
+                frame.src = displayUrl;
+                console.log('Preview iframe loaded:', displayUrl);
+
+                // Once loaded, run scale so layout is correct
+                frame.onload = () => updatePreviewScale();
+            }
+
+            // Recalculate scale on window resize (e.g., iPad rotation)
+            window.addEventListener('resize', updatePreviewScale);
+
+            // Kick everything off
+            setTimeout(() => {
+                initPreviewFrame();
+                updatePreviewScale();
+            }, 300);
+            
             // Navigation functions
             window.remoteNavigate = function(panelName) {
                 sendToRelay({ type: 'navigate', panel: panelName });
@@ -1722,6 +2168,48 @@
                 drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
             };
             
+            window.toggleLocalFullscreen = function() {
+                // iOS Safari doesn't support Fullscreen API well, handle gracefully
+                if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+                    alert('Fullscreen not supported on this device. Rotate to landscape or use browser\'s fullscreen option.');
+                    return;
+                }
+                
+                const requestFullscreen = document.documentElement.requestFullscreen || 
+                                         document.documentElement.webkitRequestFullscreen;
+                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+                
+                if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                    if (requestFullscreen) {
+                        requestFullscreen.call(document.documentElement).then(() => {
+                            document.getElementById('local-fullscreen-btn').textContent = '⛶ Exit Fullscreen';
+                        }).catch(err => {
+                            console.error('Fullscreen error:', err);
+                            alert('Fullscreen blocked. Try landscape mode or use browser fullscreen.');
+                        });
+                    }
+                } else {
+                    if (exitFullscreen) {
+                        exitFullscreen.call(document).then(() => {
+                            document.getElementById('local-fullscreen-btn').textContent = '⛶ Fullscreen iPad';
+                        }).catch(err => {
+                            console.error('Exit fullscreen error:', err);
+                        });
+                    }
+                }
+            };
+            
+            // Update local fullscreen button on fullscreen change
+            const fullscreenChangeHandler = () => {
+                const btn = document.getElementById('local-fullscreen-btn');
+                if (btn) {
+                    const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+                    btn.textContent = isFullscreen ? '⛶ Exit Fullscreen' : '⛶ Fullscreen iPad';
+                }
+            };
+            document.addEventListener('fullscreenchange', fullscreenChangeHandler);
+            document.addEventListener('webkitfullscreenchange', fullscreenChangeHandler);
+            
             // Tool selection
             window.setTool = function(tool) {
                 activeTool = tool;
@@ -1731,6 +2219,7 @@
                 if (tool === 'text') {
                     const text = prompt('Type text to display on screen:');
                     if (text) {
+                        const rect = drawCanvas.getBoundingClientRect();
                         sendToRelay({
                             type: 'stroke',
                             stroke: {
@@ -1739,7 +2228,8 @@
                                 color: activeColor,
                                 fontSize: 36,
                                 x: 50,
-                                y: 50
+                                y: 50,
+                                viewportAspect: rect.width / rect.height
                             }
                         });
                     }
@@ -1749,7 +2239,7 @@
             };
             
             // Color selection
-            window.setColor = function(color) {
+            window.setColor = function(event, color) {
                 activeColor = color;
                 document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
                 event.target.classList.add('active');
@@ -1766,10 +2256,18 @@
                 const x = touch.clientX - rect.left;
                 const y = touch.clientY - rect.top;
                 
+                // Use displayed size (rect) for percentage calculation to match any CSS scaling
+                // Store both percentage and absolute pixel values for more precise translation
                 currentStroke.push({
                     x: ((x / rect.width) * 100).toFixed(2),
-                    y: ((y / rect.height) * 100).toFixed(2)
+                    y: ((y / rect.height) * 100).toFixed(2),
+                    pixelX: x.toFixed(2),
+                    pixelY: y.toFixed(2),
+                    canvasWidth: rect.width,
+                    canvasHeight: rect.height
                 });
+                
+                console.log(`🔵 Touch: ${x.toFixed(0)},${y.toFixed(0)} of ${rect.width.toFixed(0)}x${rect.height.toFixed(0)} = ${currentStroke[0].x}%,${currentStroke[0].y}%`);
                 
                 drawCtx.beginPath();
                 drawCtx.moveTo(x, y);
@@ -1790,9 +2288,15 @@
                 drawCtx.lineTo(x, y);
                 drawCtx.stroke();
                 
+                // Use displayed size (rect) for percentage calculation to match any CSS scaling
+                // Store both percentage and absolute pixel values for more precise translation
                 currentStroke.push({
                     x: ((x / rect.width) * 100).toFixed(2),
-                    y: ((y / rect.height) * 100).toFixed(2)
+                    y: ((y / rect.height) * 100).toFixed(2),
+                    pixelX: x.toFixed(2),
+                    pixelY: y.toFixed(2),
+                    canvasWidth: rect.width,
+                    canvasHeight: rect.height
                 });
             }, { passive: false });
             
@@ -1801,13 +2305,26 @@
                 isDrawing = false;
                 
                 if (currentStroke.length > 1) {
+                    // Include detailed viewport dimensions for precise coordinate translation
+                    const rect = drawCanvas.getBoundingClientRect();
+                    
                     sendToRelay({
                         type: 'stroke',
                         stroke: {
                             type: 'path',
                             color: activeColor,
                             width: 4,
-                            points: currentStroke
+                            points: currentStroke,
+                            // Send TV dimensions for coordinate translation
+                            tvDimensions: {
+                                viewportWidth: previewState.tvWidth,
+                                viewportHeight: previewState.tvHeight
+                            },
+                            remoteDimensions: {
+                                width: rect.width,
+                                height: rect.height,
+                                aspect: rect.width / rect.height
+                            }
                         }
                     });
                 }
@@ -1815,6 +2332,25 @@
             });
             
             connectRemoteRelay();
+        }
+        
+        function scaleMapToFit() {
+            const mapContainer = document.getElementById('map-container');
+            const panel = document.getElementById('earth-panel');
+            if (!mapContainer || !panel || !panel.classList.contains('active')) return;
+            
+            const panelRect = panel.getBoundingClientRect();
+            const availableWidth = panelRect.width - 50;
+            const availableHeight = panelRect.height - 150;
+            
+            const baseWidth = 1562.5;
+            const baseHeight = 669.53;
+            
+            const scaleX = availableWidth / baseWidth;
+            const scaleY = availableHeight / baseHeight;
+            const scale = Math.max(Math.min(scaleX, scaleY, 1.5), 0.8);
+            
+            mapContainer.style.setProperty('--map-scale', scale);
         }
         
         window.addEventListener('load', () => {
@@ -1826,6 +2362,18 @@
             initMapLocations();
             initCountUpAnimations();
             addKeyboardNavigation();
+            
+            // Scale map when earth panel opens
+            const observer = new MutationObserver(() => {
+                scaleMapToFit();
+            });
+            const earthPanel = document.getElementById('earth-panel');
+            if (earthPanel) {
+                observer.observe(earthPanel, { attributes: true, attributeFilter: ['class'] });
+            }
+            
+            // Scale map on window resize
+            window.addEventListener('resize', scaleMapToFit);
         });
         
         function addKeyboardNavigation() {
