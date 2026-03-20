@@ -708,6 +708,12 @@
             transform: scale(1.05);
         }
         
+        /* Hide fullscreen button on main app, only show on remote */
+        .fullscreen-btn {
+            display: none;
+        }
+        
+        /* Keep the original rule for reference */
         body.remote-mode .fullscreen-btn {
             display: none;
         }
@@ -728,6 +734,41 @@
         .connection-dot.connected {
             background: #4CAF50;
         }
+        
+        .tree-button-container {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 10;
+        }
+        
+        /* Hide tree button on main page, only show on remote */
+        body:not(.remote-mode) .tree-button-container {
+            display: none;
+        }
+        
+        .tree-nav-btn {
+            padding: 15px 30px;
+            font-family: 'Cinzel', serif;
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--color-gold);
+            background: rgba(15, 15, 30, 0.8);
+            border: 2px solid var(--color-gold);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+        }
+        
+        .tree-nav-btn:hover {
+            background: rgba(212, 175, 55, 0.2);
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
@@ -746,8 +787,11 @@
                 </defs>
             </svg>
             <div id="tree-image-wrapper">
-                <img id="tree-image" src="enhanced_tree.png" alt="Tree of Life">
+                <img id="tree-image" src="ellen_bible.png" alt="Ellen White Bible">
                 <div id="hotspots-container"></div>
+                <div class="tree-button-container">
+                    <button class="tree-nav-btn" onclick="showTreeView()">🌳 View Tree of Life</button>
+                </div>
             </div>
         </div>
     </div>
@@ -771,6 +815,7 @@
             <div class="remote-section-title">Display Controls</div>
             <div class="nav-grid">
                 <button class="nav-btn nav-btn-full" id="local-fullscreen-btn" onclick="toggleLocalFullscreen()">⛶ Fullscreen iPad</button>
+                <button class="nav-btn nav-btn-full" onclick="remoteNavigate('tree-view')">🌳 View Tree of Life</button>
             </div>
             <div style="text-align: center; font-size: 12px; color: var(--color-gold); margin-top: 10px; opacity: 0.7;">
                 💻 Church Display: Press F key on laptop
@@ -1288,6 +1333,46 @@
         } else {
             document.body.classList.add("display-mode");
         }
+        
+        // Function to show tree view
+        function showTreeView() {
+            // Store the current image in localStorage
+            localStorage.setItem('currentView', 'tree');
+            
+            // Change the image to the tree
+            const treeImage = document.getElementById('tree-image');
+            if (treeImage) {
+                treeImage.src = 'enhanced_tree.png';
+                treeImage.alt = 'Tree of Life';
+            }
+            
+            // Hide the button after clicking
+            const buttonContainer = document.querySelector('.tree-button-container');
+            if (buttonContainer) {
+                buttonContainer.style.display = 'none';
+            }
+        }
+        
+        // Reset localStorage on initial page load to show Ellen Bible by default
+        if (!sessionStorage.getItem('pageLoaded')) {
+            localStorage.removeItem('currentView');
+            sessionStorage.setItem('pageLoaded', 'true');
+        }
+        
+        // Check if we should show the tree or ellen bible on load
+        window.addEventListener('DOMContentLoaded', function() {
+            const currentView = localStorage.getItem('currentView');
+            const treeImage = document.getElementById('tree-image');
+            const buttonContainer = document.querySelector('.tree-button-container');
+            
+            if (currentView === 'tree' && treeImage) {
+                treeImage.src = 'enhanced_tree.png';
+                treeImage.alt = 'Tree of Life';
+                if (buttonContainer) {
+                    buttonContainer.style.display = 'none';
+                }
+            }
+        });
         
         const appState = {
             activePanel: null,
@@ -1822,6 +1907,14 @@
                             // Navigation command
                             if (data.type === 'navigate') {
                                 if (data.panel === 'tree') {
+                                    closeAllPanels();
+                                } else if (data.panel === 'tree-view') {
+                                    // Show the tree view
+                                    const treeImage = document.getElementById('tree-image');
+                                    if (treeImage) {
+                                        treeImage.src = 'enhanced_tree.png';
+                                        treeImage.alt = 'Tree of Life';
+                                    }
                                     closeAllPanels();
                                 } else {
                                     openPanel(data.panel);
